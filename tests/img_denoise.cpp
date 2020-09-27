@@ -10,13 +10,13 @@
 
 using namespace std;
 
-constexpr int kernel_size = 3;
-constexpr int iterations = 2;
+constexpr int KERNEL_SIZE = 3;
+constexpr int ITERATIONS = 2;
+constexpr double FRAC = 0.5;
 
 default_random_engine gen;
 
 //#define VERBOSE
-
 
 double colour_diff(unsigned char const * const c1, unsigned char const * const c2){
 ///approximate perceptual colour diff
@@ -57,15 +57,15 @@ vector<N*> init_tree(vector<unsigned char> const & img,
 	    coordinate_map[n] = {i, j};
 	    vector<int> labels;
 	    int id_label = 0;
-	    for(int k=-kernel_size;k<=kernel_size;++k){
-		for(int l=-kernel_size;l<=kernel_size;++l){
+	    for(int k=-KERNEL_SIZE;k<=KERNEL_SIZE;++k){
+		for(int l=-KERNEL_SIZE;l<=KERNEL_SIZE;++l){
 		    int ii = i+k;
 		    int jj = j+l;
-		    uniform_int_distribution<int> distr(0,1);
+		    uniform_real_distribution<float> distr(0.,1.);
 		    if(ii>=0 && ii<h &&
 		       jj>=0 && jj<w &&
 		       (ii!=i || jj!=j)&&
-		       distr(gen)){
+		       distr(gen) < FRAC){
 			labels.push_back(id_label);
 			label_map[n][id_label] = {ii,jj};
 			id_label++;
@@ -80,8 +80,8 @@ vector<N*> init_tree(vector<unsigned char> const & img,
 	    int index = i*w+j;
 	    assert(index<ret.size());
 	    N * n = ret[index];
-	    for(int k=-kernel_size;k<=kernel_size;++k){
-		for(int l=-kernel_size;l<=kernel_size;++l){
+	    for(int k=-KERNEL_SIZE;k<=KERNEL_SIZE;++k){
+		for(int l=-KERNEL_SIZE;l<=KERNEL_SIZE;++l){
 		    int ii = i+k;
 		    int jj = j+l;
 		    if(ii>=0 && ii<h &&
@@ -132,7 +132,7 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
 			      return colour_diff(&img[y0*w*4+x0*4], &img[y1*w*4+x1*4]);
 			  };
 
-    for(int t=0;t<iterations;++t){
+    for(int t=0;t<ITERATIONS;++t){
 #ifdef VERBOSE
         printf("iter: %d\n",t);
 #endif

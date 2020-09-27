@@ -3,6 +3,8 @@
 #include <iostream>
 #include <cassert>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 
 using namespace std;
     
@@ -98,65 +100,75 @@ void N::cycle(vector<N*> & ns,
 	      function<double(N* const, int const)> f_node,
 	      function<double(N* const, int const, N* const, int const)> f_edge){
 
-    unsigned int const processors = thread::hardware_concurrency();
-    vector<thread> t(processors);
+    int processors = thread::hardware_concurrency();
+    processors = max(processors,1);
+    
+    vector<thread> t(processors-1);
     int chunk = ns.size()/processors;
 
-    auto f_update_belief = [&](int t_idx, int chunk){
-			       for(int j= t_idx*chunk; j < (t_idx+1)*chunk; ++j){
-				   auto i = ns[j];
-				   i->update_belief(f_node, f_edge);
-			       }
-			   };
-    auto f_distribute = [&](int t_idx, int chunk){
-			    for(int j= t_idx*chunk; j < (t_idx+1)*chunk; ++j){
-				auto i = ns[j];
-				i->distribute_msg(f_node, f_edge);
-			    }
-			};
-    auto f_update_msg = [&](int t_idx, int chunk){
-			    for(int j= t_idx*chunk; j < (t_idx+1)*chunk; ++j){
-				auto i = ns[j];
-				i->update_msg();
-			    }
-			};
+    int stage = 0;
+    int sync_count = 0;
+    mutex mut;
+    condition_variable cond_var;
     
+    auto f_work = [&](int const t_idx, int const start, int const chunk){
+
+		      {
+			  unique_lock<mutex> lock(mut);
+			  cond_var.wait( lock, [&](){return stage == 0;} );
+		      }
+		      for(int j= start; j < start+chunk; ++j){
+			  auto i = ns[j];
+			  i->update_belief(f_node, f_edge);
+		      }
+		      {
+			  unique_lock<mutex> lock(mut);
+			  if(++sync_count == processors)
+			      stage = (stage+1)%3;
+			  sync_count = sync_count % processors;
+			  cond_var.notify_all();
+		      }
+		      {
+			  unique_lock<mutex> lock(mut);
+			  cond_var.wait( lock, [&](){return stage == 1;} );
+		      }
+		      for(int j= start; j < start+chunk; ++j){
+			  auto i = ns[j];
+			  i->distribute_msg(f_node, f_edge);
+		      }
+		      {
+			  unique_lock<mutex> lock(mut);
+			  if(++sync_count == processors)
+			      stage = (stage+1)%3;
+			  sync_count = sync_count % processors;
+			  cond_var.notify_all();
+		      }
+		      {
+			  unique_lock<mutex> lock(mut);
+			  cond_var.wait( lock, [&](){return stage == 2;} );
+		      }
+		      for(int j= start; j < start+chunk; ++j){
+			  auto i = ns[j];
+			  i->update_msg();
+		      }
+		      {
+			  unique_lock<mutex> lock(mut);
+			  if(++sync_count == processors)
+			      stage = (stage+1)%3;
+			  sync_count = sync_count % processors;
+			  cond_var.notify_all();
+		      }
+		  };
+
     int remain = ns.size() % processors;
 
     for(int i=0;i<t.size();++i){
-	t[i] = thread(f_update_belief, i, chunk);
+	t[i] = thread(f_work, i, i*chunk, chunk);
     }
-    f_update_belief(t.size(), remain);
+    
+    f_work(t.size(), t.size()*chunk, chunk+remain);
     
     for(int i=0;i<t.size();++i){
 	t[i].join();
     }
-    
-    for(int i=0;i<t.size();++i){
-	t[i] = thread(f_distribute, i, chunk);
-    }
-    f_distribute(t.size(), remain);
-    
-    for(int i=0;i<t.size();++i){
-	t[i].join();
-    }
-
-    for(int i=0;i<t.size();++i){
-	t[i] = thread(f_update_msg, i, chunk);
-    }
-    f_update_msg(t.size(), remain);
-    
-    for(int i=0;i<t.size();++i){
-	t[i].join();
-    }
-
-    // for(auto i: ns){
-    // 	i->update_belief(f_node, f_edge);
-    // }	
-    // for(auto i: ns){
-    // 	i->distribute_msg(f_node, f_edge);
-    // }
-    // for(auto i: ns){
-    // 	i->update_msg();
-    // }
 }
