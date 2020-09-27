@@ -3,11 +3,11 @@
 BP algorithm in C++, along with some examples.
 
 ## Original
-![Image of Yaktocat](https://github.com/clearlycloudy/belief/tests/img3.png)
+![img3](https://github.com/clearlycloudy/belief/tests/img3.png?raw=true)
 ## After
-![Image of Yaktocat](https://github.com/clearlycloudy/belief/tests/out_img3.png)
+![img3after](https://github.com/clearlycloudy/belief/tests/out_img3.png?raw=true)
 
 ## Original
-![Image of Yaktocat](https://github.com/clearlycloudy/belief/tests/img2.png)
+![img2](https://github.com/clearlycloudy/belief/tests/img2.png?raw=true)
 ## After
-![Image of Yaktocat](https://github.com/clearlycloudy/belief/tests/out_img2.png)
+![img2after](https://github.com/clearlycloudy/belief/tests/out_img2.png?raw=true)
