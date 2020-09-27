@@ -2,6 +2,10 @@
 
 BP algorithm in C++, along with some examples.
 
+# Examples
+
+## Image Filtering
+
 ### Original
 ![img3](https://github.com/clearlycloudy/belief/blob/master/tests/img3.png?raw=true)
 ### After
