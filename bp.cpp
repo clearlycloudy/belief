@@ -27,10 +27,10 @@ void N::set_labels(int count){
     count_labels = count;
 }
 
-//prerequisite: finish set_labels before using this
 void N::set_neighbour_aux(N* n){
-    assert(n!=this);
-    neighbour.push_back(n);
+    if(n!=this && n){
+	neighbour.push_back(n);
+    }
 }
 void N::set_neighbour(N* n){
     set_neighbour_aux(n);
@@ -65,8 +65,7 @@ void N::update_belief(function<double(N* const, int const)> f_node,
 }
     
 void N::distribute_msg(function<double(N* const, int const)> f_node,
-		       function<double(N* const, int const, N* const, int const)> f_edge){
-    
+		       function<double(N* const, int const, N* const, int const)> f_edge){    
     ///distribute message using one with minimum value
     
     for(auto other: neighbour){
@@ -99,7 +98,8 @@ void N::update_msg(){
 void N::cycle(vector<N*> & ns,
 	      function<double(N* const, int const)> f_node,
 	      function<double(N* const, int const, N* const, int const)> f_edge){
-
+    ///perform 1 cycle of the algorithm
+    
     int processors = thread::hardware_concurrency();
     processors = max(processors,1);
     
