@@ -19,6 +19,10 @@ void N::debug_label(){
     }
 }
 
+int N::get_label() const {
+    return label;
+}
+
 void N::set_labels(int count){
     assert(count>0);
     msg_label.resize(count);
@@ -27,13 +31,10 @@ void N::set_labels(int count){
     count_labels = count;
 }
 
-void N::set_neighbour_aux(N* n){
+void N::set_neighbour(N* const n){
     if(n!=this && n){
 	neighbour.push_back(n);
     }
-}
-void N::set_neighbour(N* n){
-    set_neighbour_aux(n);
 }
 
 void N::update_belief(function<double(N* const, int const)> f_node,

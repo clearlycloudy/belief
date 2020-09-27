@@ -6,19 +6,23 @@
 #include <initializer_list>
 
 class N {
-public:
+    
+private:
+    
     int label; //selected label after optimization
     int count_labels; //current node labels
     std::vector<std::unordered_map<N*,double>> msg_label; //holds incoming messages, label -> neighbour -> message
     std::vector<std::unordered_map<N*,double>> msg_label_swap;
     std::vector<N*> neighbour;
     std::vector<double> belief;
+    
+public:
 
+    int get_label() const;
+    
     void set_labels(int count_labels);
 
-    void set_neighbour(N* n);
-    
-    void set_neighbour_aux(N* n);
+    void set_neighbour(N* const n);
     
     static void cycle(std::vector<N*> & nodes,
 		      std::function<double(N* const, int const)> f_node,

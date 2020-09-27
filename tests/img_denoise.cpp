@@ -163,7 +163,7 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
 
     for(auto i: ns){
 	auto [y,x] = coordinate_map[i];
-	auto [yy,xx] = label_map[i][i->label];
+	auto [yy,xx] = label_map[i][i->get_label()];
 	unsigned char r = img[yy*w*4+xx*4];
 	unsigned char g = img[yy*w*4+xx*4+1];
 	unsigned char b = img[yy*w*4+xx*4+2];
