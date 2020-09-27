@@ -6,6 +6,8 @@
 #include <mutex>
 #include <condition_variable>
 
+#define VERBOSE
+
 using namespace std;
 
 void N::debug_label(){
@@ -96,10 +98,11 @@ void N::update_msg(){
     swap(msg_label, msg_label_swap);
 }
 
-void N::cycle(vector<N*> & ns,
+void N::cycle(int const iter,
+	      vector<N*> & ns,
 	      function<double(N* const, int const)> f_node,
 	      function<double(N* const, int const, N* const, int const)> f_edge){
-    ///perform 1 cycle of the algorithm
+    ///perform iter cycles of algorithm
     
     int processors = thread::hardware_concurrency();
     processors = max(processors,1);
@@ -113,51 +116,57 @@ void N::cycle(vector<N*> & ns,
     condition_variable cond_var;
     
     auto f_work = [&](int const t_idx, int const start, int const chunk){
-
-		      {
-			  unique_lock<mutex> lock(mut);
-			  cond_var.wait( lock, [&](){return stage == 0;} );
-		      }
-		      for(int j= start; j < start+chunk; ++j){
-			  auto i = ns[j];
-			  i->update_belief(f_node, f_edge);
-		      }
-		      {
-			  unique_lock<mutex> lock(mut);
-			  if(++sync_count == processors)
-			      stage = (stage+1)%3;
-			  sync_count = sync_count % processors;
-			  cond_var.notify_all();
-		      }
-		      {
-			  unique_lock<mutex> lock(mut);
-			  cond_var.wait( lock, [&](){return stage == 1;} );
-		      }
-		      for(int j= start; j < start+chunk; ++j){
-			  auto i = ns[j];
-			  i->distribute_msg(f_node, f_edge);
-		      }
-		      {
-			  unique_lock<mutex> lock(mut);
-			  if(++sync_count == processors)
-			      stage = (stage+1)%3;
-			  sync_count = sync_count % processors;
-			  cond_var.notify_all();
-		      }
-		      {
-			  unique_lock<mutex> lock(mut);
-			  cond_var.wait( lock, [&](){return stage == 2;} );
-		      }
-		      for(int j= start; j < start+chunk; ++j){
-			  auto i = ns[j];
-			  i->update_msg();
-		      }
-		      {
-			  unique_lock<mutex> lock(mut);
-			  if(++sync_count == processors)
-			      stage = (stage+1)%3;
-			  sync_count = sync_count % processors;
-			  cond_var.notify_all();
+	
+		      for(int _=0; _<iter; ++_){
+#ifdef VERBOSE
+			  if(t_idx==0) printf("iter: %d\n",_);
+#endif
+		      
+			  {
+			      unique_lock<mutex> lock(mut);
+			      cond_var.wait( lock, [&](){return stage == 0;} );
+			  }
+			  for(int j= start; j < start+chunk; ++j){
+			      auto i = ns[j];
+			      i->update_belief(f_node, f_edge);
+			  }
+			  {
+			      unique_lock<mutex> lock(mut);
+			      if(++sync_count == processors)
+				  stage = (stage+1)%3;
+			      sync_count = sync_count % processors;
+			      cond_var.notify_all();
+			  }
+			  {
+			      unique_lock<mutex> lock(mut);
+			      cond_var.wait( lock, [&](){return stage == 1;} );
+			  }
+			  for(int j= start; j < start+chunk; ++j){
+			      auto i = ns[j];
+			      i->distribute_msg(f_node, f_edge);
+			  }
+			  {
+			      unique_lock<mutex> lock(mut);
+			      if(++sync_count == processors)
+				  stage = (stage+1)%3;
+			      sync_count = sync_count % processors;
+			      cond_var.notify_all();
+			  }
+			  {
+			      unique_lock<mutex> lock(mut);
+			      cond_var.wait( lock, [&](){return stage == 2;} );
+			  }
+			  for(int j= start; j < start+chunk; ++j){
+			      auto i = ns[j];
+			      i->update_msg();
+			  }
+			  {
+			      unique_lock<mutex> lock(mut);
+			      if(++sync_count == processors)
+				  stage = (stage+1)%3;
+			      sync_count = sync_count % processors;
+			      cond_var.notify_all();
+			  }
 		      }
 		  };
 

@@ -19,8 +19,6 @@ constexpr double FRAC_LABEL = 0.5;
 
 default_random_engine gen;
 
-#define VERBOSE
-
 double colour_diff(unsigned char const * const c1, unsigned char const * const c2){
 ///approximate perceptual colour diff
     
@@ -152,12 +150,7 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
 			      return colour_diff(&img[y0*w*4+x0*4], &img[y1*w*4+x1*4]);
 			  };
 
-    for(int t=0;t<ITERATIONS;++t){
-#ifdef VERBOSE
-        printf("iter: %d\n",t);
-#endif
-	N::cycle(ns, potential_node, potential_edge);
-    }
+    N::cycle(ITERATIONS, ns, potential_node, potential_edge);
 
     vector<unsigned char> out(img.size(),0);
 

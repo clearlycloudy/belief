@@ -20,11 +20,12 @@ public:
 
     int get_label() const;
     
-    void set_labels(int count_labels);
+    void set_labels(int const count_labels);
 
     void set_neighbour(N* const n);
     
-    static void cycle(std::vector<N*> & nodes,
+    static void cycle(int const iter,
+		      std::vector<N*> & nodes,
 		      std::function<double(N* const, int const)> f_node,
 		      std::function<double(N* const, int const, N* const, int const)> f_edge);
     
