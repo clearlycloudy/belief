@@ -4,19 +4,22 @@
 #include <functional>
 #include <cmath>
 #include <random>
+#include <unordered_map>
 
 #include "../bp.hpp"
 #include "lodepng.h"
 
 using namespace std;
 
+constexpr int KERNEL_SIZE_LABEL = 1;
 constexpr int KERNEL_SIZE = 3;
-constexpr int ITERATIONS = 2;
-constexpr double FRAC = 0.5;
+constexpr int ITERATIONS = 3;
+constexpr double FRAC_NEIGH = 0.2;
+constexpr double FRAC_LABEL = 0.75;
 
 default_random_engine gen;
 
-//#define VERBOSE
+#define VERBOSE
 
 double colour_diff(unsigned char const * const c1, unsigned char const * const c2){
 ///approximate perceptual colour diff
@@ -39,15 +42,15 @@ double colour_diff(unsigned char const * const c1, unsigned char const * const c
 vector<N*> init_tree(vector<unsigned char> const & img,
 		     int const h,
 		     int const w,
-		     map<N*,pair<int,int>> & coordinate_map,
-		     map<N*,map<int,pair<int,int>>> & label_map){
+		     unordered_map<N*,pair<int,int>> & coordinate_map,
+		     unordered_map<N*,unordered_map<int,pair<int,int>>> & label_map){
     
     assert(img.size()%4==0);
     vector<N*> ret(img.size()/4);
     
     int id = 0;
     for(auto &i: ret){
-    	i = new N(++id);
+    	i = new N;
     }
     for(int i=0;i<h;++i){
 	for(int j=0;j<w;++j){
@@ -55,45 +58,62 @@ vector<N*> init_tree(vector<unsigned char> const & img,
 	    assert(index<ret.size());
 	    N * n = ret[index];
 	    coordinate_map[n] = {i, j};
-	    vector<int> labels;
-	    int id_label = 0;
-	    for(int k=-KERNEL_SIZE;k<=KERNEL_SIZE;++k){
-		for(int l=-KERNEL_SIZE;l<=KERNEL_SIZE;++l){
-		    int ii = i+k;
-		    int jj = j+l;
-		    uniform_real_distribution<float> distr(0.,1.);
-		    if(ii>=0 && ii<h &&
-		       jj>=0 && jj<w &&
-		       (ii!=i || jj!=j)&&
-		       distr(gen) < FRAC){
-			labels.push_back(id_label);
-			label_map[n][id_label] = {ii,jj};
-			id_label++;
+	    int count_labels = 0;
+	    while(count_labels<=0){
+		int id_label = 0;
+		label_map[n].clear();
+		for(int k=-KERNEL_SIZE_LABEL;k<=KERNEL_SIZE_LABEL;++k){
+		    for(int l=-KERNEL_SIZE_LABEL;l<=KERNEL_SIZE_LABEL;++l){
+			int ii = i+k;
+			int jj = j+l;
+			uniform_real_distribution<float> distr(0.,1.);
+			if(ii>=0 && ii<h &&
+			   jj>=0 && jj<w &&
+			   (ii!=i || jj!=j)&&
+			   distr(gen) < FRAC_LABEL){
+			    label_map[n][id_label] = {ii,jj};
+			    id_label++;
+			}
 		    }
 		}
+		count_labels = id_label;
 	    }
-	    n->set_labels(labels);
+	    n->set_labels(count_labels);
 	}
     }
+    unordered_map<N*, set<N*>> neigh_map;
     for(int i=0;i<h;++i){
 	for(int j=0;j<w;++j){
 	    int index = i*w+j;
 	    assert(index<ret.size());
 	    N * n = ret[index];
-	    for(int k=-KERNEL_SIZE;k<=KERNEL_SIZE;++k){
-		for(int l=-KERNEL_SIZE;l<=KERNEL_SIZE;++l){
-		    int ii = i+k;
-		    int jj = j+l;
-		    if(ii>=0 && ii<h &&
-		       jj>=0 && jj<w &&
-		       (ii!=i || jj!=j)){
-			int index2 = ii*w+jj;
-			n->set_neighbour(ret[index2]);
+	    int count_neighbour = 0;
+	    while(count_neighbour<=0){
+		for(int k=-KERNEL_SIZE;k<=KERNEL_SIZE;++k){
+		    for(int l=-KERNEL_SIZE;l<=KERNEL_SIZE;++l){
+			int ii = i+k;
+			int jj = j+l;
+			uniform_real_distribution<float> distr(0.,1.);
+			if(ii>=0 && ii<h &&
+			   jj>=0 && jj<w &&
+			   (ii!=i || jj!=j)&&
+			   distr(gen) < FRAC_NEIGH){
+			    int index2 = ii*w+jj;
+			    neigh_map[n].insert(ret[index2]);
+			    count_neighbour++;
+			}
 		    }
 		}
 	    }
 	}
     }
+
+    for(auto [n, neigh]: neigh_map){
+	for(auto i: neigh){
+	    n->set_neighbour(i);
+	}
+    }
+    
     return ret;
 }
 
@@ -110,8 +130,8 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
 			     int const h,
 			     int const w){
     
-    map<N*,pair<int,int>> coordinate_map;
-    map<N*,map<int,pair<int,int>>> label_map;
+    unordered_map<N*,pair<int,int>> coordinate_map;
+    unordered_map<N*,unordered_map<int,pair<int,int>>> label_map;
     
     vector<N*> ns = init_tree(img, h, w, coordinate_map, label_map);
     assert(ns.size()>0);	

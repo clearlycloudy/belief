@@ -7,43 +7,43 @@
 #include <condition_variable>
 
 using namespace std;
-    
-N::N(int val): id(val) {}
 
 void N::debug_label(){
-    for(auto &[l, m]: msg_label){
-	printf("id: %d, label: %d:", id, l);
+    for(int l=0; l<msg_label.size(); ++l){
+	auto & m = msg_label[l];
+	printf("label: %d, incoming messages: ", l);
 	for(auto [n, v]: m){
-	    printf("(id: %d, msg: %f) ", n->id, v);
+	    printf("msg: %f ", v);
 	}
 	printf("\n");
     }
 }
 
-void N::set_labels(vector<int> const l){
-    assert(l.size()>0);
-    for(auto i: l) msg_label[i] = {};
-    labels = vector<int>(l.begin(),l.end());
+void N::set_labels(int count){
+    assert(count>0);
+    msg_label.resize(count);
+    msg_label_swap.resize(count);
+    belief.resize(count, 0.);
+    count_labels = count;
 }
 
 //prerequisite: finish set_labels before using this
 void N::set_neighbour_aux(N* n){
     assert(n!=this);
-    neighbour.insert(n);
-    for(auto &[l, m]: msg_label){
-	m[n] = 0.;
-    }
+    neighbour.push_back(n);
 }
 void N::set_neighbour(N* n){
     set_neighbour_aux(n);
-    n->set_neighbour_aux(this);
 }
 
 void N::update_belief(function<double(N* const, int const)> f_node,
 		      function<double(N* const, int const, N* const, int const)> f_edge){
     ///update label using arg min
+
+    assert(msg_label.size()==count_labels);
     
-    for(auto const & [l, m]: msg_label){
+    for(int l=0; l<count_labels; ++l){
+	auto &m = msg_label[l];
 	double b = 0.;
 	for(auto [n, msg]: m){
 	    b += msg;
@@ -54,7 +54,8 @@ void N::update_belief(function<double(N* const, int const)> f_node,
     //pick one label
     double v_best = numeric_limits<int>::max();
     int label_best;
-    for(auto [l, v]: belief){
+    for(int l=0; l<belief.size(); ++l){
+	double v = belief[l];
 	if(v_best>v){
 	    v_best = v;
 	    label_best = l;
@@ -69,23 +70,23 @@ void N::distribute_msg(function<double(N* const, int const)> f_node,
     ///distribute message using one with minimum value
     
     for(auto other: neighbour){
-	for(auto l_other: other->labels){ //fix other's l_other, this is the target destination for message
+	for(int l_other=0; l_other<other->count_labels; ++l_other){//fix other's l_other, this is the target destination for message
 	    double val_best = numeric_limits<int>::max();
-	    for(auto l_cur: labels){ //go thru current node's labels
-
-		double val = 0.;
-		
+	    for(int l_cur=0; l_cur<count_labels;++l_cur){ //go thru current node's labels
+		double val = 0.;		
 		double potential = f_node(this, l_cur) + f_edge(this, l_cur, other, l_other);
-
 		double msg_neighbour = 0.;
 		for(auto neigh: neighbour){
 		    if(neigh!=other){
-			msg_neighbour += msg_label[l_cur][other];
+			if(auto it = msg_label[l_cur].find(other); it!=msg_label[l_cur].end()){
+			    msg_neighbour += it->second;
+			}
 		    }
 		}
 		val = potential + msg_neighbour;
 	        val_best = min(val_best, val);
 	    }
+	    assert(l_other<other->msg_label_swap.size());
 	    other->msg_label_swap[l_other][this] = val_best; //msg to other's l_other from current node
 	}
     }
@@ -93,7 +94,6 @@ void N::distribute_msg(function<double(N* const, int const)> f_node,
 
 void N::update_msg(){
     swap(msg_label, msg_label_swap);
-    msg_label_swap.clear();
 }
 
 void N::cycle(vector<N*> & ns,
@@ -106,8 +106,8 @@ void N::cycle(vector<N*> & ns,
     vector<thread> t(processors-1);
     int chunk = ns.size()/processors;
 
-    int stage = 0;
-    int sync_count = 0;
+    uint32_t stage = 0;
+    uint32_t sync_count = 0;
     mutex mut;
     condition_variable cond_var;
     

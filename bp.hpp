@@ -1,4 +1,5 @@
-#include <map>
+#include <unordered_map>
+#include <unordered_set>
 #include <functional>
 #include <vector>
 #include <set>
@@ -6,18 +7,14 @@
 
 class N {
 public:
-    
-    int id;
-    int label;
-    std::vector<int> labels; //current node labels
-    std::map<int,std::map<N*,double>> msg_label; //holds incoming messages, label -> neighbour -> message
-    std::map<int,std::map<N*,double>> msg_label_swap;
-    std::set<N*> neighbour;
-    std::map<int,double> belief;
+    int label; //selected label after optimization
+    int count_labels; //current node labels
+    std::vector<std::unordered_map<N*,double>> msg_label; //holds incoming messages, label -> neighbour -> message
+    std::vector<std::unordered_map<N*,double>> msg_label_swap;
+    std::vector<N*> neighbour;
+    std::vector<double> belief;
 
-    N(int val);
-
-    void set_labels(std::vector<int> l);
+    void set_labels(int count_labels);
 
     void set_neighbour(N* n);
     
