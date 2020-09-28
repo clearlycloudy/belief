@@ -14,7 +14,6 @@ private:
     std::vector<std::unordered_map<N*,float>> msg_label; //holds incoming messages, label -> neighbour -> message
     std::vector<std::unordered_map<N*,float>> msg_label_swap;
     std::vector<N*> neighbour;
-    // std::vector<float> belief; //label -> belief
     
 public:
 

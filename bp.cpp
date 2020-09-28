@@ -29,7 +29,6 @@ void N::set_labels(int count){
     assert(count>0);
     msg_label.resize(count);
     msg_label_swap.resize(count);
-    // belief.resize(count, 0.);
     count_labels = count;
 }
 
@@ -41,31 +40,23 @@ void N::set_neighbour(N* const n){
 
 void N::update_belief(function<float(N* const, int const)> f_node,
 		      function<float(N* const, int const, N* const, int const)> f_edge){
-    ///update label using arg min
+    ///update label
 
     assert(msg_label.size()==count_labels);
-
-    vector<float> belief(count_labels, 0.);
+    
+    float belief_best = numeric_limits<int>::max();
     for(int l=0; l<count_labels; ++l){
 	auto &m = msg_label[l];
 	float b = 0.;
 	for(auto [n, msg]: m){
 	    b += msg;
 	}
-	belief[l] = b + f_node(this, l);
-    }
-
-    //pick one label
-    float v_best = numeric_limits<int>::max();
-    int label_best;
-    for(int l=0; l<belief.size(); ++l){
-	float v = belief[l];
-	if(v_best>v){
-	    v_best = v;
-	    label_best = l;
+	float val = b + f_node(this, l);
+	if(val < belief_best){
+	    belief_best = val;
+	    label = l;
 	}
     }
-    label = label_best;
 }
 
 void N::distribute_msg(function<float(N* const, int const)> f_node,
