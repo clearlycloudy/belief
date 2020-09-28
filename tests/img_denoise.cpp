@@ -5,6 +5,7 @@
 #include <cmath>
 #include <random>
 #include <unordered_map>
+#include <thread>
 
 #include "../bp.hpp"
 #include "lodepng.h"
@@ -13,13 +14,13 @@ using namespace std;
 
 constexpr int KERNEL_SIZE_LABEL = 1;
 constexpr int KERNEL_SIZE = 1;
-constexpr int ITERATIONS = 3;
-constexpr double FRAC_NEIGH = 0.5;
-constexpr double FRAC_LABEL = 0.5;
+constexpr int ITERATIONS = 10;
+constexpr float FRAC_NEIGH = 0.85;
+constexpr float FRAC_LABEL = 0.85;
 
 default_random_engine gen;
 
-double colour_diff(unsigned char const * const c1, unsigned char const * const c2){
+float colour_diff(unsigned char const * const c1, unsigned char const * const c2){
 ///approximate perceptual colour diff
     
     unsigned char r1 = c1[0];
@@ -30,7 +31,7 @@ double colour_diff(unsigned char const * const c1, unsigned char const * const c
     unsigned char g2 = c2[1];
     unsigned char b2 = c2[2];
 
-    double rr = (r1+r2)/2.;
+    float rr = (r1+r2)/2.;
     
     return sqrt((2.+rr/256.)*(r1-r2)*(r1-r2) +
 		4*(g1-g2)*(g1-g2) +
@@ -67,7 +68,6 @@ vector<N*> init_tree(vector<unsigned char> const & img,
 			uniform_real_distribution<float> distr(0.,1.);
 			if(ii>=0 && ii<h &&
 			   jj>=0 && jj<w &&
-			   (ii!=i || jj!=j)&&
 			   distr(gen) < FRAC_LABEL){
 			    label_map[n][id_label] = {ii,jj};
 			    id_label++;
@@ -135,14 +135,14 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
     assert(ns.size()>0);	
     
     auto potential_node = [&](N* const n,
-			      int const l) -> double {
+			      int const l) -> float {
 			      return 1.;
 			  };
 
     auto potential_edge = [&](N* const n0,
 			      int const l0,
 			      N* const n1,
-			      int const l1) -> double {
+			      int const l1) -> float {
 			      assert(label_map[n0].count(l0));
 			      assert(label_map[n1].count(l1));
 			      auto [y0, x0] = label_map[n0][l0];
@@ -154,16 +154,32 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
 
     vector<unsigned char> out(img.size(),0);
 
-    for(auto i: ns){
-	auto [y,x] = coordinate_map[i];
-	auto [yy,xx] = label_map[i][i->get_label()];
-	unsigned char r = img[yy*w*4+xx*4];
-	unsigned char g = img[yy*w*4+xx*4+1];
-	unsigned char b = img[yy*w*4+xx*4+2];
-	out[y*w*4+x*4] = r;
-	out[y*w*4+x*4+1] = g;
-	out[y*w*4+x*4+2] = b;
-	out[y*w*4+x*4+3] = 255;
+    auto f_save = [&](int start, int block_size){
+		      for(int i=start; i<start+block_size; ++i){
+			  auto n = ns[i];
+			  auto [y,x] = coordinate_map[n];
+			  auto [yy,xx] = label_map[n][n->get_label()];
+			  out[y*w*4+x*4] = img[yy*w*4+xx*4];
+			  out[y*w*4+x*4+1] = img[yy*w*4+xx*4+1];
+			  out[y*w*4+x*4+2] = img[yy*w*4+xx*4+2];
+			  out[y*w*4+x*4+3] = 255;
+		      }
+		  };
+
+    int processors = thread::hardware_concurrency();
+    processors = max(processors,1);
+    
+    vector<thread> t(processors-1);
+    int chunk = ns.size() / processors;
+    int remain = ns.size() % processors;
+
+    for(int i=0;i<t.size();++i){
+	t[i] = thread(f_save, i*chunk, chunk);
+    }
+    f_save(t.size()*chunk, chunk+remain);
+
+    for(auto &i: t){
+	i.join();
     }
     
     for(auto i: ns){

@@ -29,7 +29,7 @@ void N::set_labels(int count){
     assert(count>0);
     msg_label.resize(count);
     msg_label_swap.resize(count);
-    belief.resize(count, 0.);
+    // belief.resize(count, 0.);
     count_labels = count;
 }
 
@@ -39,15 +39,16 @@ void N::set_neighbour(N* const n){
     }
 }
 
-void N::update_belief(function<double(N* const, int const)> f_node,
-		      function<double(N* const, int const, N* const, int const)> f_edge){
+void N::update_belief(function<float(N* const, int const)> f_node,
+		      function<float(N* const, int const, N* const, int const)> f_edge){
     ///update label using arg min
 
     assert(msg_label.size()==count_labels);
-    
+
+    vector<float> belief(count_labels, 0.);
     for(int l=0; l<count_labels; ++l){
 	auto &m = msg_label[l];
-	double b = 0.;
+	float b = 0.;
 	for(auto [n, msg]: m){
 	    b += msg;
 	}
@@ -55,10 +56,10 @@ void N::update_belief(function<double(N* const, int const)> f_node,
     }
 
     //pick one label
-    double v_best = numeric_limits<int>::max();
+    float v_best = numeric_limits<int>::max();
     int label_best;
     for(int l=0; l<belief.size(); ++l){
-	double v = belief[l];
+	float v = belief[l];
 	if(v_best>v){
 	    v_best = v;
 	    label_best = l;
@@ -66,25 +67,44 @@ void N::update_belief(function<double(N* const, int const)> f_node,
     }
     label = label_best;
 }
-    
-void N::distribute_msg(function<double(N* const, int const)> f_node,
-		       function<double(N* const, int const, N* const, int const)> f_edge){    
+
+void N::distribute_msg(function<float(N* const, int const)> f_node,
+		       function<float(N* const, int const, N* const, int const)> f_edge){    
     ///distribute message using one with minimum value
+
+    //cache computation
+    vector<float> msg_neigh_accum(count_labels,0.); //label -> accumulated messages    
+    for(int l_cur=0; l_cur<count_labels;++l_cur){ //go thru current node's labels
+        float accum = 0.;
+	for(auto neigh: neighbour){
+	    if(auto it = msg_label[l_cur].find(neigh); it!=msg_label[l_cur].end()){
+		accum += it->second;
+	    }	    
+	}
+	msg_neigh_accum[l_cur] = accum;
+    }
     
     for(auto other: neighbour){
 	for(int l_other=0; l_other<other->count_labels; ++l_other){//fix other's l_other, this is the target destination for message
-	    double val_best = numeric_limits<int>::max();
+	    float val_best = numeric_limits<int>::max();
 	    for(int l_cur=0; l_cur<count_labels;++l_cur){ //go thru current node's labels
-		double val = 0.;		
-		double potential = f_node(this, l_cur) + f_edge(this, l_cur, other, l_other);
-		double msg_neighbour = 0.;
-		for(auto neigh: neighbour){
-		    if(neigh!=other){
-			if(auto it = msg_label[l_cur].find(other); it!=msg_label[l_cur].end()){
-			    msg_neighbour += it->second;
-			}
-		    }
+		float val = 0.;		
+		float potential = f_node(this, l_cur) + f_edge(this, l_cur, other, l_other);
+
+		float msg_redundant = 0.;
+		if(auto it = msg_label[l_cur].find(other); it!=msg_label[l_cur].end()){
+		    msg_redundant = it->second;
 		}
+		float msg_neighbour = msg_neigh_accum[l_cur] - msg_redundant;
+		// //original
+		// float msg_neighbour = 0.;
+		// for(auto neigh: neighbour){
+		//     if(neigh!=other){
+		// 	if(auto it = msg_label[l_cur].find(neigh); it!=msg_label[l_cur].end()){
+		// 	    msg_neighbour += it->second;
+		// 	}
+		//     }
+		// }
 		val = potential + msg_neighbour;
 	        val_best = min(val_best, val);
 	    }
@@ -100,8 +120,8 @@ void N::update_msg(){
 
 void N::cycle(int const iter,
 	      vector<N*> & ns,
-	      function<double(N* const, int const)> f_node,
-	      function<double(N* const, int const, N* const, int const)> f_edge){
+	      function<float(N* const, int const)> f_node,
+	      function<float(N* const, int const, N* const, int const)> f_edge){
     ///perform iter cycles of algorithm
     
     int processors = thread::hardware_concurrency();

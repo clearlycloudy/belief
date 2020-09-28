@@ -11,10 +11,10 @@ private:
     
     int label; //selected label after optimization
     int count_labels; //current node labels
-    std::vector<std::unordered_map<N*,double>> msg_label; //holds incoming messages, label -> neighbour -> message
-    std::vector<std::unordered_map<N*,double>> msg_label_swap;
+    std::vector<std::unordered_map<N*,float>> msg_label; //holds incoming messages, label -> neighbour -> message
+    std::vector<std::unordered_map<N*,float>> msg_label_swap;
     std::vector<N*> neighbour;
-    std::vector<double> belief;
+    // std::vector<float> belief; //label -> belief
     
 public:
 
@@ -26,14 +26,14 @@ public:
     
     static void cycle(int const iter,
 		      std::vector<N*> & nodes,
-		      std::function<double(N* const, int const)> f_node,
-		      std::function<double(N* const, int const, N* const, int const)> f_edge);
+		      std::function<float(N* const, int const)> f_node,
+		      std::function<float(N* const, int const, N* const, int const)> f_edge);
     
-    void update_belief(std::function<double(N* const, int const)> f_node,
-		       std::function<double(N* const, int const, N* const, int const)> f_edge);
+    void update_belief(std::function<float(N* const, int const)> f_node,
+		       std::function<float(N* const, int const, N* const, int const)> f_edge);
     
-    void distribute_msg(std::function<double(N* const, int const)> f_node,
-			std::function<double(N* const, int const, N* const, int const)> f_edge);
+    void distribute_msg(std::function<float(N* const, int const)> f_node,
+			std::function<float(N* const, int const, N* const, int const)> f_edge);
     
     void update_msg();
 
