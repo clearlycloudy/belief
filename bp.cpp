@@ -105,7 +105,7 @@ void N::cycle(int const iter,
 	      function<float(N* const, int const, N* const, int const)> f_edge){
     ///perform iter cycles of algorithm
     
-    int processors = thread::hardware_concurrency();
+    int processors = thread::hardware_concurrency()/2; 
     processors = max(processors,1);
     
     vector<thread> t(processors-1);
