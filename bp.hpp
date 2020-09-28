@@ -24,15 +24,15 @@ public:
     void set_neighbour(N* const n);
     
     static void cycle(int const iter,
-		      std::vector<N*> & nodes,
-		      std::function<float(N* const, int const)> f_node,
-		      std::function<float(N* const, int const, N* const, int const)> f_edge);
+                      std::vector<N*> & nodes,
+                      std::function<float(N* const, int const)> f_node,
+                      std::function<float(N* const, int const, N* const, int const)> f_edge);
     
     void update_belief(std::function<float(N* const, int const)> f_node,
-		       std::function<float(N* const, int const, N* const, int const)> f_edge);
+                       std::function<float(N* const, int const, N* const, int const)> f_edge);
     
     void distribute_msg(std::function<float(N* const, int const)> f_node,
-			std::function<float(N* const, int const, N* const, int const)> f_edge);
+                        std::function<float(N* const, int const, N* const, int const)> f_edge);
 
     void accum_msg();
     
