@@ -14,7 +14,7 @@ private:
     std::vector<std::unordered_map<N*,float>> msg_label; //holds incoming messages, label -> neighbour -> message
     std::vector<std::unordered_map<N*,float>> msg_label_swap;
     std::vector<N*> neighbour;
-    
+    std::vector<float> msg_neigh_accum;
 public:
 
     int get_label() const;
@@ -33,6 +33,8 @@ public:
     
     void distribute_msg(std::function<float(N* const, int const)> f_node,
 			std::function<float(N* const, int const, N* const, int const)> f_edge);
+
+    void accum_msg();
     
     void update_msg();
 

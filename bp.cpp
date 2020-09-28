@@ -30,6 +30,7 @@ void N::set_labels(int count){
     msg_label.resize(count);
     msg_label_swap.resize(count);
     count_labels = count;
+    msg_neigh_accum.resize(count, 0.);
 }
 
 void N::set_neighbour(N* const n){
@@ -46,7 +47,7 @@ void N::update_belief(function<float(N* const, int const)> f_node,
     
     float belief_best = numeric_limits<int>::max();
     for(int l=0; l<count_labels; ++l){
-	auto &m = msg_label[l];
+	auto const &m = msg_label[l];
 	float b = 0.;
 	for(auto [n, msg]: m){
 	    b += msg;
@@ -59,48 +60,37 @@ void N::update_belief(function<float(N* const, int const)> f_node,
     }
 }
 
-void N::distribute_msg(function<float(N* const, int const)> f_node,
-		       function<float(N* const, int const, N* const, int const)> f_edge){    
-    ///distribute message using one with minimum value
-
-    //cache computation
-    vector<float> msg_neigh_accum(count_labels,0.); //label -> accumulated messages    
-    for(int l_cur=0; l_cur<count_labels;++l_cur){ //go thru current node's labels
+void N::accum_msg(){
+    ///cache computation: collect neighbouring nodes' messages
+    for(int l_cur=0; l_cur<count_labels;++l_cur){
         float accum = 0.;
-	for(auto neigh: neighbour){
+	for(auto const neigh: neighbour){
 	    if(auto it = msg_label[l_cur].find(neigh); it!=msg_label[l_cur].end()){
 		accum += it->second;
 	    }	    
 	}
 	msg_neigh_accum[l_cur] = accum;
     }
+}
     
-    for(auto other: neighbour){
-	for(int l_other=0; l_other<other->count_labels; ++l_other){//fix other's l_other, this is the target destination for message
+void N::distribute_msg(function<float(N* const, int const)> f_node,
+		       function<float(N* const, int const, N* const, int const)> f_edge){    
+    ///distribute message using one with minimum value
+    
+    for(int l_cur=0; l_cur<count_labels;++l_cur){ //destination labels
+	for(auto const other: neighbour){ //source nodes
 	    float val_best = numeric_limits<int>::max();
-	    for(int l_cur=0; l_cur<count_labels;++l_cur){ //go thru current node's labels
-		float val = 0.;		
+	    for(int l_other=0; l_other<other->count_labels; ++l_other){
 		float potential = f_node(this, l_cur) + f_edge(this, l_cur, other, l_other);
-
 		float msg_redundant = 0.;
-		if(auto it = msg_label[l_cur].find(other); it!=msg_label[l_cur].end()){
+		if(auto const it = other->msg_label[l_other].find(this); it!=other->msg_label[l_other].end()){
 		    msg_redundant = it->second;
 		}
-		float msg_neighbour = msg_neigh_accum[l_cur] - msg_redundant;
-		// //original
-		// float msg_neighbour = 0.;
-		// for(auto neigh: neighbour){
-		//     if(neigh!=other){
-		// 	if(auto it = msg_label[l_cur].find(neigh); it!=msg_label[l_cur].end()){
-		// 	    msg_neighbour += it->second;
-		// 	}
-		//     }
-		// }
-		val = potential + msg_neighbour;
-	        val_best = min(val_best, val);
+		float msg_neighbour = other->msg_neigh_accum[l_other] - msg_redundant;
+	        val_best = min(val_best, potential + msg_neighbour);
 	    }
-	    assert(l_other<other->msg_label_swap.size());
-	    other->msg_label_swap[l_other][this] = val_best; //msg to other's l_other from current node
+	    assert(l_cur<msg_label_swap.size());
+	    msg_label_swap[l_cur][other] = val_best; //incoming msg from other to current node's l_cur
 	}
     }
 }
@@ -144,7 +134,7 @@ void N::cycle(int const iter,
 			  {
 			      unique_lock<mutex> lock(mut);
 			      if(++sync_count == processors)
-				  stage = (stage+1)%3;
+				  stage = (stage+1)%4;
 			      sync_count = sync_count % processors;
 			      cond_var.notify_all();
 			  }
@@ -159,7 +149,7 @@ void N::cycle(int const iter,
 			  {
 			      unique_lock<mutex> lock(mut);
 			      if(++sync_count == processors)
-				  stage = (stage+1)%3;
+				  stage = (stage+1)%4;
 			      sync_count = sync_count % processors;
 			      cond_var.notify_all();
 			  }
@@ -169,12 +159,27 @@ void N::cycle(int const iter,
 			  }
 			  for(int j= start; j < start+chunk; ++j){
 			      auto i = ns[j];
+			      i->accum_msg();
+			  }
+			  {
+			      unique_lock<mutex> lock(mut);
+			      if(++sync_count == processors)
+				  stage = (stage+1)%4;
+			      sync_count = sync_count % processors;
+			      cond_var.notify_all();
+			  }
+			  {
+			      unique_lock<mutex> lock(mut);
+			      cond_var.wait( lock, [&](){return stage == 3;} );
+			  }
+			  for(int j= start; j < start+chunk; ++j){
+			      auto i = ns[j];
 			      i->update_msg();
 			  }
 			  {
 			      unique_lock<mutex> lock(mut);
 			      if(++sync_count == processors)
-				  stage = (stage+1)%3;
+				  stage = (stage+1)%4;
 			      sync_count = sync_count % processors;
 			      cond_var.notify_all();
 			  }

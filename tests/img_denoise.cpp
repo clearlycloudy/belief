@@ -12,11 +12,11 @@
 
 using namespace std;
 
-constexpr int KERNEL_SIZE_LABEL = 1;
-constexpr int KERNEL_SIZE = 1;
-constexpr int ITERATIONS = 10;
-constexpr float FRAC_NEIGH = 0.85;
-constexpr float FRAC_LABEL = 0.85;
+constexpr int KERNEL_SIZE_LABEL = 2;
+constexpr int KERNEL_SIZE = 2;
+constexpr int ITERATIONS = 4;
+constexpr float FRAC_NEIGH = 0.8;
+constexpr float FRAC_LABEL = 0.8;
 
 default_random_engine gen;
 
