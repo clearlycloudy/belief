@@ -45,7 +45,7 @@ void N::update_belief(function<float(N* const, int const)> f_node,
 
     assert(msg_label.size()==count_labels);
     
-    float belief_best = numeric_limits<int>::max();
+    float belief_best = numeric_limits<float>::max();
     for(int l=0; l<count_labels; ++l){
         auto const &m = msg_label[l];
         float b = 0.;
@@ -79,7 +79,7 @@ void N::distribute_msg(function<float(N* const, int const)> f_node,
     
     for(int l_cur=0; l_cur<count_labels;++l_cur){ //destination labels
         for(auto const other: neighbour){ //source nodes
-            float val_best = numeric_limits<int>::max();
+            float val_best = numeric_limits<float>::max();
             for(int l_other=0; l_other<other->count_labels; ++l_other){
                 float potential = f_node(this, l_cur) + f_edge(this, l_cur, other, l_other);
                 float msg_redundant = 0.;
