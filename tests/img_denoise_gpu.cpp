@@ -17,12 +17,16 @@ using namespace std;
 
 constexpr int KERNEL_SIZE_LABEL = 1;
 constexpr int KERNEL_SIZE = 1;
-constexpr int ITERATIONS = 4;
-constexpr float FRAC_NEIGH = 0.3;
-constexpr float FRAC_LABEL = 0.3;
-constexpr int NUM_THREADS = 256;
+constexpr int ITERATIONS = 10;
+constexpr float FRAC_NEIGH = 0.5;
+constexpr float FRAC_LABEL = 0.5;
+constexpr int NUM_THREADS = 512;
 
 default_random_engine gen;
+
+void get_err(){
+    printf("err: %s\n", cudaGetErrorString(cudaGetLastError()));
+}
 
 __host__ __device__
 float colour_diff(unsigned char const * const c1, unsigned char const * const c2){
@@ -132,8 +136,15 @@ pair<N*, int> init_tree(vector<unsigned char> const & img,
         n->set_neighbours(neigh_ids);
     }
 
+    int max_labels = 0;
+    int max_neigh = 0;
     for(auto i: ret){
-        i->confirm_neighbours();
+        max_labels = max(max_labels, i->get_count_labels());
+        max_neigh = max(max_neigh, i->get_count_neighbours());
+    }
+        
+    for(auto i: ret){
+        i->confirm_neighbours(max_labels, max_neigh);
     }
 
     for(auto i: ret){
@@ -167,10 +178,11 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
 
     assert(node_count == label_map.size());
         
-    for(int i=0; i<label_map.size(); ++i){
+    for(int i=0; i<node_count; ++i){
         int num_labels = label_map[i].size();
         for(int j=0; j<num_labels; ++j){
-            label_map_array[i*max_count_labels + j] = label_map[i][j];
+            label_map_array[i*max_count_labels + j].first = label_map[i][j].first;
+            label_map_array[i*max_count_labels + j].second = label_map[i][j].second;
         }
     }
 
@@ -188,8 +200,8 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
                &img[0],
                img.size() * sizeof(unsigned char), cudaMemcpyHostToDevice);
         
-    auto potential_node = [=] __device__ (N* const n,
-                                          int const l) -> float {
+    auto potential_node = [] __device__ (N* const n,
+                                         int const l) -> float {
         return 1.;
     };
 
@@ -204,8 +216,8 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
 
     float* label_node_data;
     cudaMalloc(&label_node_data, node_count * sizeof(float)* 2 * max_count_labels * max_count_neighbours);    
-    float* label_node = label_node_data;
-    float* label_node_swap = label_node_data + (node_count * max_count_labels * max_count_neighbours);
+    float* label_node = label_node_data; //mapping: label_id * max_count_neighbours + neighbour_id -> message
+    float* label_node_swap = &label_node_data[node_count * max_count_labels * max_count_neighbours];
 
     int* neighbours_data;
     cudaMalloc(&neighbours_data, node_count * sizeof(int) * max_count_neighbours);
@@ -216,17 +228,31 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
 
     for(int i=0; i<node_count; ++i){
 
-        float* device_label_node = label_node + i * max_count_labels * max_count_neighbours;
-        float* device_label_node_swap = label_node_swap + i * max_count_labels * max_count_neighbours;
+        float* device_label_node = &label_node[i * max_count_labels * max_count_neighbours];
+        float* device_label_node_swap = &label_node_swap[i * max_count_labels * max_count_neighbours];
 
-        int* device_neighbours = neighbours_data + i * max_count_neighbours;
+        int* device_neighbours = &neighbours_data[i * max_count_neighbours];
         
-        ns[i].CudaCopy(&ns_host[i], &ns_gpu[i], ns_gpu,
-                       device_label_node, device_label_node_swap, device_neighbours);
+        ns[i].CudaCopy(&ns_host[i],
+                       ns_gpu,
+                       device_label_node,
+                       device_label_node_swap,
+                       device_neighbours,
+                       max_count_labels,
+                       max_count_neighbours);
     }
+
     cudaMemcpy(ns_gpu, ns_host, node_count*sizeof(N), cudaMemcpyHostToDevice);
+
+    get_err();
     
-    cycle<<<1, NUM_THREADS>>>(ITERATIONS, ns_gpu, node_count, potential_node, potential_edge);
+    cycle<NUM_THREADS>(ITERATIONS,
+                       ns_gpu,
+                       node_count,
+                       potential_node,
+                       potential_edge);
+
+    cudaDeviceSynchronize();
     
     //copy labels back
     N* ns_copy_back = new N[node_count];
@@ -234,7 +260,9 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
                ns_gpu,
                sizeof(N) * node_count,
                cudaMemcpyDeviceToHost);
+    
     for(int i=0; i<node_count; ++i){
+        assert(ns[i].id==ns_copy_back[i].id);
         ns[i].label = ns_copy_back[i].label;
         ns_copy_back[i].msg_label = nullptr;
         ns_copy_back[i].msg_label_swap = nullptr;
@@ -246,7 +274,7 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
     //free stuff
     cudaFree(device_label_map_array);
     delete [] label_map_array;
-    
+        
     //free gpu memory
     
     for(int i=0; i<node_count; ++i){
@@ -280,6 +308,8 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
     int chunk = node_count / processors;
     int remain = node_count % processors;
 
+    get_err();
+        
     for(int i=0;i<t.size();++i){
         t[i] = thread(f_save, i*chunk, chunk);
     }
@@ -288,14 +318,12 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
     for(auto &i: t){
         i.join();
     }
-
-    cudaFree(ns_gpu);
     
     delete [] ns;
-
+    
     cudaFree(label_node_data);
     cudaFree(neighbours_data);
-    
+
     return out;
 }
 

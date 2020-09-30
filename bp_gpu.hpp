@@ -7,13 +7,15 @@
 #include <iostream>
 #include <cassert>
 
+#define BP_VERBOSE
+
 struct N {
     
     int id; //current node id
     int label; //selected label after optimization
     int count_labels = 0; //current node labels
     int count_neighbours = 0;
-    float * msg_label = nullptr; //holds incoming msg; indexing: label * count_neighbours + node_id -> message
+    float * msg_label = nullptr; //holds incoming msg; indexing: label * count_neighbours_max (provided by Fmsg_index lambda) + node_id -> message
     float * msg_label_swap = nullptr; //temporary
     int * neighbours = nullptr; //neighbour node ids
     N* node_map = nullptr; //node_id -> N* (globally shared)
@@ -39,12 +41,14 @@ struct N {
     }
     
     __host__
-    void CudaCopy(N* node_host, N* node_gpu, N* nodes_gpu_start,
-                  float* device_label_node, float* device_label_node_swap,
-                  int* device_neighbours){
-        
-        ///copy node data to gpu side, located at node_gpu
-        //node_host serves as temporary storage on host side
+    void CudaCopy(N* node_host,
+                  N* nodes_gpu_start,
+                  float* device_label_node,
+                  float* device_label_node_swap,
+                  int* device_neighbours,
+                  int max_count_labels,
+                  int max_count_neighbours){
+        ///copy node data to temporary buffer at node_host, while allocating some internal data on gpu 
         
         node_host->id = id;
         node_host->label = label;
@@ -53,11 +57,11 @@ struct N {
 
         cudaMemcpy(device_label_node,
                    msg_label,
-                   count_labels*count_neighbours*sizeof(float),
+                   count_labels * count_neighbours * sizeof(float),
                    cudaMemcpyHostToDevice);
         cudaMemcpy(device_label_node_swap,
                    msg_label_swap,
-                   count_labels*count_neighbours*sizeof(float),
+                   count_labels * count_neighbours * sizeof(float),
                    cudaMemcpyHostToDevice);
         
         node_host->msg_label = device_label_node;
@@ -94,6 +98,16 @@ struct N {
     }
 
     __host__ __device__
+    int get_count_labels() const {
+        return count_labels;
+    }
+
+    __host__ __device__
+    int get_count_neighbours() const {
+        return count_neighbours;
+    }
+    
+    __host__ __device__
     void set_node_map(N* n_map){
         assert(n_map);
         node_map = n_map;
@@ -129,7 +143,7 @@ struct N {
     }
 
     __host__
-    void confirm_neighbours(){
+    void confirm_neighbours(int max_count_labels, int max_count_neighbours){
         
         if(msg_label) delete [] msg_label;
         if(msg_label_swap) delete [] msg_label_swap;
@@ -147,11 +161,11 @@ struct N {
                        Fedge f_edge){
         ///update label
         float belief_best = std::numeric_limits<float>::max();
+                    
         for(int l=0; l<count_labels; ++l){
             float accum = 0.;
             for(int j = 0; j < count_neighbours; ++j){
-                int idx = l*count_neighbours + j;
-                accum += msg_label[idx];
+                accum += msg_label[l * count_neighbours + j];
             }
             float val = accum + f_node(this, l);
             if(val < belief_best){
@@ -175,7 +189,8 @@ struct N {
                     float potential = f_node(this, l_cur) + f_edge(this, l_cur, node_other, l_other);
                     float msg_neighbour = 0.;
                     for(int j = 0; j < node_other->count_neighbours; ++j){
-                        msg_neighbour += node_other->neighbours[j] == id ? 0 : node_other->msg_label[l_other * node_other->count_neighbours + j];
+                        int index = l_other * node_other->count_neighbours + j;
+                        msg_neighbour += node_other->neighbours[j] == id ? 0 : node_other->msg_label[index];
                     }
                     val_best = min(val_best, potential + msg_neighbour);
                 }
@@ -192,33 +207,32 @@ struct N {
     }
 };
 
-constexpr int THREADS = 1024;
-
-        
 template<class Fnode, class Fedge>
-__global__ static void cycle(int const iter,
-                             N* nodes,
-                             int num_nodes,
-                             Fnode f_node,
-                             Fedge f_edge){
-    
+__global__ static void cycle_aux(int iter,
+                                 int num_threads,
+                                 N* nodes,
+                                 int num_nodes,
+                                 Fnode f_node,
+                                 Fedge f_edge){
+
     int t = threadIdx.x;
-    int chunk_nominal = num_nodes / 1024;
-    int remain = num_nodes % 1024;
+    int chunk_nominal = num_nodes / num_threads;
+    int remain = num_nodes % num_threads;
     int chunk_adjust = t < remain ? chunk_nominal+1 : chunk_nominal;
     int start = chunk_adjust * min(t, remain) + chunk_nominal * max(t-remain, 0);
 
+#ifdef BP_VERBOSE
+    if(t==0) printf("node count: %d\n", num_nodes);
+#endif
+    
     for(int i=0; i<iter; ++i){
 
+#ifdef BP_VERBOSE
         if(t==0) printf("iter: %d\n", i);
-        
+#endif
         for(int j=start; j<start+chunk_adjust; ++j){
-            assert(j>=0);
-            assert(j<num_nodes);
             nodes[j].update_belief(f_node, f_edge);
         }
-        
-        __syncthreads();
 
         for(int j=start; j<start+chunk_adjust; ++j){
             nodes[j].distribute_msg(f_node, f_edge);
@@ -232,4 +246,20 @@ __global__ static void cycle(int const iter,
 
         __syncthreads();
     }
+}
+
+template<int THREADS, class Fnode, class Fedge>
+__host__
+static void cycle(int const iter,
+                  N* nodes,
+                  int num_nodes,
+                  Fnode f_node,
+                  Fedge f_edge){
+
+    cycle_aux<<<1, THREADS>>>(iter,
+                              THREADS,
+                              nodes,
+                              num_nodes,
+                              f_node,
+                              f_edge);
 }
