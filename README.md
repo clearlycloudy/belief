@@ -1,5 +1,5 @@
 # belief propagation
-1;5202;0c
+
 BP algorithm in C++, along with some examples.
 
 # Implementation
