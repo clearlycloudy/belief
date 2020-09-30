@@ -1,28 +1,32 @@
-#include <iostream>
-#include <vector>
-#include <cassert>
-#include <functional>
 #include <cmath>
 #include <random>
 #include <unordered_map>
 #include <thread>
 #include <set>
+#include <cassert>
+#include <vector>
+#include <utility>
+#include <iostream>
 
-#include "../bp.hpp"
+#include <curand_kernel.h>
+
+#include "../bp_gpu.hpp"
 #include "lodepng.h"
 
 using namespace std;
 
-constexpr int KERNEL_SIZE_LABEL = 2;
-constexpr int KERNEL_SIZE = 2;
+constexpr int KERNEL_SIZE_LABEL = 1;
+constexpr int KERNEL_SIZE = 1;
 constexpr int ITERATIONS = 4;
-constexpr float FRAC_NEIGH = 0.8;
-constexpr float FRAC_LABEL = 0.8;
+constexpr float FRAC_NEIGH = 0.3;
+constexpr float FRAC_LABEL = 0.3;
+constexpr int NUM_THREADS = 256;
 
 default_random_engine gen;
 
+__host__ __device__
 float colour_diff(unsigned char const * const c1, unsigned char const * const c2){
-///approximate perceptual colour diff
+    ///approximate perceptual colour diff
     
     unsigned char r1 = c1[0];
     unsigned char g1 = c1[1];
@@ -39,18 +43,24 @@ float colour_diff(unsigned char const * const c1, unsigned char const * const c2
                 (2.+(255.-rr)/256.)*(b1-b2)*(b1-b2));
 }
 
-vector<N*> init_tree(vector<unsigned char> const & img,
-                     int const h,
-                     int const w,
-                     unordered_map<N*,pair<int,int>> & coordinate_map,
-                     unordered_map<N*,unordered_map<int,pair<int,int>>> & label_map){
-    
-    assert(img.size()%4==0);
-    vector<N*> ret(img.size()/4);
+__host__
+pair<N*, int> init_tree(vector<unsigned char> const & img,
+                        int const h,
+                        int const w,
+                        unordered_map<N*,pair<int,int>> & coordinate_map,
+                        vector<vector<pair<int,int>>> & label_map){
 
+    int nodes_count = img.size()/4;
+    
+    vector<N*> ret(nodes_count);
+
+    N* ns = new N[nodes_count];
+    
     int id = 0;
     for(auto &i: ret){
-        i = new N(id++);
+        i = &ns[id];
+        i->id = id;
+        id++;
     }
     
     for(int i=0;i<h;++i){
@@ -62,7 +72,8 @@ vector<N*> init_tree(vector<unsigned char> const & img,
             int count_labels = 0;
             while(count_labels<=0){
                 int id_label = 0;
-                label_map[n].clear();
+                if(n->get_id()<label_map.size())
+                    label_map[n->get_id()].clear();
                 for(int k=-KERNEL_SIZE_LABEL;k<=KERNEL_SIZE_LABEL;++k){
                     for(int l=-KERNEL_SIZE_LABEL;l<=KERNEL_SIZE_LABEL;++l){
                         int ii = i+k;
@@ -71,7 +82,12 @@ vector<N*> init_tree(vector<unsigned char> const & img,
                         if(ii>=0 && ii<h &&
                            jj>=0 && jj<w &&
                            distr(gen) < FRAC_LABEL){
-                            label_map[n][id_label] = {ii,jj};
+                            if(n->get_id() >= label_map.size())
+                                label_map.resize(n->get_id()+1);
+                            if(label_map[n->get_id()].size() <= id_label){
+                                label_map[n->get_id()].resize(id_label+1);
+                            }
+                            label_map[n->get_id()][id_label] = {ii,jj};
                             id_label++;
                         }
                     }
@@ -109,81 +125,161 @@ vector<N*> init_tree(vector<unsigned char> const & img,
     }
 
     for(auto [n, neigh]: neigh_map){
-	set<int> neigh_ids;
+        set<int> neigh_ids;
         for(auto i: neigh){
-	    neigh_ids.insert(i->get_id());
+            neigh_ids.insert(i->get_id());
         }
-	n->set_neighbours(neigh_ids);
+        n->set_neighbours(neigh_ids);
     }
 
     for(auto i: ret){
-	i->confirm_neighbours();
+        i->confirm_neighbours();
     }
 
     for(auto i: ret){
-	i->set_node_map(&ret[0]);
+        i->set_node_map(ret[0]);
     }
 
-    return ret;
+    return {ns, nodes_count};
 }
 
-int img_pixel(vector<unsigned char> const & img,
-              int const h,
-              int const w,
-              int const channel,
-              int y, int x){
-    assert(y>=0&&y<h);
-    assert(x>=0&&x<w);
-    return (int) img[y*w*channel+x*channel];
-}
+__host__
 vector<unsigned char> bp_run(vector<unsigned char> const & img,
                              int const h,
                              int const w){
     
     unordered_map<N*,pair<int,int>> coordinate_map;
-    unordered_map<N*,unordered_map<int,pair<int,int>>> label_map;
+    vector<vector<pair<int,int>>> label_map; //node id -> label -> coordinates
+
+    N* ns;
+    int node_count;
+    std::tie(ns, node_count) = init_tree(img, h, w, coordinate_map, label_map);
+    assert(node_count>0);
+
     
-    vector<N*> ns = init_tree(img, h, w, coordinate_map, label_map);
-    assert(ns.size()>0);
-		      
-    auto potential_node = [&](N* const n,
-                              int const l) -> float {
-                              return 1.;
-                          };
+    pair<int,int> ** label_map_array = new pair<int,int>*[label_map.size()];
+    
+    for(int i=0; i<label_map.size(); ++i){
+        int num_labels = label_map[i].size();
+        //allocate on device
+        pair<int,int>* device_label_map_array_inner;
+        cudaMalloc(&device_label_map_array_inner, num_labels*sizeof(pair<int,int>));
 
-    auto potential_edge = [&](N* const n0,
-                              int const l0,
-                              N* const n1,
-                              int const l1) -> float {
-                              assert(label_map[n0].count(l0));
-                              assert(label_map[n1].count(l1));
-                              auto [y0, x0] = label_map[n0][l0];
-                              auto [y1, x1] = label_map[n1][l1];
-                              return colour_diff(&img[y0*w*4+x0*4], &img[y1*w*4+x1*4]);
-                          };
+        cudaMemcpy(device_label_map_array_inner,
+                   &label_map[i][0],
+                   num_labels*sizeof(pair<int,int>), cudaMemcpyHostToDevice);
 
-    N::cycle(ITERATIONS, ns, potential_node, potential_edge);
+        label_map_array[i] = device_label_map_array_inner;
+    }
 
+    pair<int,int>** device_label_map_array;
+    cudaMalloc(&device_label_map_array, label_map.size()*sizeof(pair<int,int>*));
+
+    cudaMemcpy(device_label_map_array,
+               label_map_array,
+               label_map.size()*sizeof(pair<int,int>*), cudaMemcpyHostToDevice);
+
+    unsigned char * img_data;
+    cudaMalloc(&img_data, img.size() * sizeof(unsigned char));
+    cudaMemcpy(img_data,
+               &img[0],
+               img.size() * sizeof(unsigned char), cudaMemcpyHostToDevice);
+        
+    auto potential_node = [=] __device__ (N* const n,
+                                          int const l) -> float {
+        return 1.;
+    };
+
+    auto potential_edge = [=] __device__ (N* const n0,
+                                          int const l0,
+                                          N* const n1,
+                                          int const l1) -> float {
+        auto [y0, x0] = device_label_map_array[n0->get_id()][l0];
+        auto [y1, x1] = device_label_map_array[n1->get_id()][l1];
+        return colour_diff(&img_data[y0*w*4+x0*4], &img_data[y1*w*4+x1*4]);
+    };
+
+    N* ns_gpu = N::CudaBulkAllocNodes(node_count); //device mem alloc
+
+    printf("last error: %s\n", cudaGetErrorString(cudaGetLastError()));
+    
+    N* ns_host = N::BulkAllocNodes(node_count); //host mem alloc
+
+    printf("last error: %s\n", cudaGetErrorString(cudaGetLastError()));
+
+    std::vector<float*> recycle;
+    for(int i=0; i<node_count; ++i){
+        ns[i].CudaCopy(&ns_host[i], &ns_gpu[i], ns_gpu, recycle);
+    }
+
+    printf("last error: %s\n", cudaGetErrorString(cudaGetLastError()));
+    
+    cycle<<<1, NUM_THREADS>>>(ITERATIONS, ns_gpu, node_count, potential_node, potential_edge);
+    
+    //copy labels back
+    N* ns_copy_back = new N[node_count];
+    cudaMemcpy(ns_copy_back,
+               ns_gpu,
+               sizeof(N) * node_count,
+               cudaMemcpyDeviceToHost);
+    for(int i=0; i<node_count; ++i){
+        ns[i].label = ns_copy_back[i].label;
+        ns_copy_back[i].msg_label = nullptr;
+        ns_copy_back[i].msg_label_swap = nullptr;
+        ns_copy_back[i].neighbours = nullptr;
+        ns_copy_back[i].node_map = nullptr;
+    }
+    delete [] ns_copy_back;
+    
+    //free stuff
+    for(int i=0; i<label_map.size(); ++i){
+        cudaFree(label_map_array[i]);
+    }
+    cudaFree(device_label_map_array);
+    delete [] label_map_array;
+    
+    //free gpu memory
+    
+    for(int i=0; i<node_count; ++i){
+        N& n = ns_host[i];
+        cudaFree(n.msg_label);
+        cudaFree(n.msg_label_swap);
+        cudaFree(n.neighbours);
+
+        n.msg_label = nullptr;
+        n.msg_label_swap = nullptr;
+        n.neighbours = nullptr;
+        n.node_map = nullptr;
+    }
+    delete [] ns_host;
+    
+    for(auto i: recycle){
+        cudaFree(i);
+    }
+    cudaFree(ns_gpu);
+
+    cudaFree(img_data);
+    
     vector<unsigned char> out(img.size(),0);
 
     auto f_save = [&](int start, int block_size){
-                      for(int i=start; i<start+block_size; ++i){
-                          auto n = ns[i];
-                          auto [y,x] = coordinate_map[n];
-                          auto [yy,xx] = label_map[n][n->get_label()];
-                          out[y*w*4+x*4] = img[yy*w*4+xx*4];
-                          out[y*w*4+x*4+1] = img[yy*w*4+xx*4+1];
-                          out[y*w*4+x*4+2] = img[yy*w*4+xx*4+2];
-                          out[y*w*4+x*4+3] = 255;
-                      }
-                  };
+        for(int i=start; i<start+block_size; ++i){
+            N * n = &ns[i];
+            auto [y,x] = coordinate_map[n];
+            auto [yy,xx] = label_map[n->get_id()][n->get_label()];
+            out[y*w*4+x*4] = img[yy*w*4+xx*4];
+            out[y*w*4+x*4+1] = img[yy*w*4+xx*4+1];
+            out[y*w*4+x*4+2] = img[yy*w*4+xx*4+2];
+            out[y*w*4+x*4+3] = 255;
+        }
+    };
 
     int processors = thread::hardware_concurrency();
     processors = max(processors,1);
     
     vector<thread> t(processors-1);
-    int chunk = ns.size() / processors;
-    int remain = ns.size() % processors;
+    int chunk = node_count / processors;
+    int remain = node_count % processors;
 
     for(int i=0;i<t.size();++i){
         t[i] = thread(f_save, i*chunk, chunk);
@@ -193,15 +289,16 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
     for(auto &i: t){
         i.join();
     }
+
+    cudaFree(ns_gpu);
     
-    for(auto i: ns){
-        delete i;
-    }
+    delete [] ns;
 
     return out;
 }
 
 int main(){
+    cout << "enter input file path" << endl;
     string file;
     cin >> file;
     vector<unsigned char> img;
