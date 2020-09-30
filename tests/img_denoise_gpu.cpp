@@ -156,28 +156,31 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
     std::tie(ns, node_count) = init_tree(img, h, w, coordinate_map, label_map);
     assert(node_count>0);
 
+    int max_count_labels = 0;
+    int max_count_neighbours = 0;
+    for(int i=0; i<node_count; ++i){
+        max_count_labels = max(max_count_labels, ns[i].count_labels);
+        max_count_neighbours = max(max_count_neighbours, ns[i].count_neighbours); 
+    }
     
-    pair<int,int> ** label_map_array = new pair<int,int>*[label_map.size()];
-    
+    pair<int,int> * label_map_array = new pair<int,int>[node_count * max_count_labels];
+
+    assert(node_count == label_map.size());
+        
     for(int i=0; i<label_map.size(); ++i){
         int num_labels = label_map[i].size();
-        //allocate on device
-        pair<int,int>* device_label_map_array_inner;
-        cudaMalloc(&device_label_map_array_inner, num_labels*sizeof(pair<int,int>));
-
-        cudaMemcpy(device_label_map_array_inner,
-                   &label_map[i][0],
-                   num_labels*sizeof(pair<int,int>), cudaMemcpyHostToDevice);
-
-        label_map_array[i] = device_label_map_array_inner;
+        for(int j=0; j<num_labels; ++j){
+            label_map_array[i*max_count_labels + j] = label_map[i][j];
+        }
     }
 
-    pair<int,int>** device_label_map_array;
-    cudaMalloc(&device_label_map_array, label_map.size()*sizeof(pair<int,int>*));
+    //device mem alloc for node -> label -> coodinate
+    pair<int,int>* device_label_map_array;
+    cudaMalloc(&device_label_map_array, node_count * max_count_labels * sizeof(pair<int,int>));
 
     cudaMemcpy(device_label_map_array,
                label_map_array,
-               label_map.size()*sizeof(pair<int,int>*), cudaMemcpyHostToDevice);
+               node_count * max_count_labels * sizeof(pair<int,int>), cudaMemcpyHostToDevice);
 
     unsigned char * img_data;
     cudaMalloc(&img_data, img.size() * sizeof(unsigned char));
@@ -194,25 +197,34 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
                                           int const l0,
                                           N* const n1,
                                           int const l1) -> float {
-        auto [y0, x0] = device_label_map_array[n0->get_id()][l0];
-        auto [y1, x1] = device_label_map_array[n1->get_id()][l1];
+        auto [y0, x0] = device_label_map_array[n0->get_id() * max_count_labels + l0];
+        auto [y1, x1] = device_label_map_array[n1->get_id() * max_count_labels + l1];
         return colour_diff(&img_data[y0*w*4+x0*4], &img_data[y1*w*4+x1*4]);
     };
 
-    N* ns_gpu = N::CudaBulkAllocNodes(node_count); //device mem alloc
+    float* label_node_data;
+    cudaMalloc(&label_node_data, node_count * sizeof(float)* 2 * max_count_labels * max_count_neighbours);    
+    float* label_node = label_node_data;
+    float* label_node_swap = label_node_data + (node_count * max_count_labels * max_count_neighbours);
 
-    printf("last error: %s\n", cudaGetErrorString(cudaGetLastError()));
+    int* neighbours_data;
+    cudaMalloc(&neighbours_data, node_count * sizeof(int) * max_count_neighbours);
+    
+    N* ns_gpu = N::CudaBulkAllocNodes(node_count); //device mem alloc
     
     N* ns_host = N::BulkAllocNodes(node_count); //host mem alloc
 
-    printf("last error: %s\n", cudaGetErrorString(cudaGetLastError()));
-
-    std::vector<float*> recycle;
     for(int i=0; i<node_count; ++i){
-        ns[i].CudaCopy(&ns_host[i], &ns_gpu[i], ns_gpu, recycle);
-    }
 
-    printf("last error: %s\n", cudaGetErrorString(cudaGetLastError()));
+        float* device_label_node = label_node + i * max_count_labels * max_count_neighbours;
+        float* device_label_node_swap = label_node_swap + i * max_count_labels * max_count_neighbours;
+
+        int* device_neighbours = neighbours_data + i * max_count_neighbours;
+        
+        ns[i].CudaCopy(&ns_host[i], &ns_gpu[i], ns_gpu,
+                       device_label_node, device_label_node_swap, device_neighbours);
+    }
+    cudaMemcpy(ns_gpu, ns_host, node_count*sizeof(N), cudaMemcpyHostToDevice);
     
     cycle<<<1, NUM_THREADS>>>(ITERATIONS, ns_gpu, node_count, potential_node, potential_edge);
     
@@ -232,9 +244,6 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
     delete [] ns_copy_back;
     
     //free stuff
-    for(int i=0; i<label_map.size(); ++i){
-        cudaFree(label_map_array[i]);
-    }
     cudaFree(device_label_map_array);
     delete [] label_map_array;
     
@@ -242,20 +251,10 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
     
     for(int i=0; i<node_count; ++i){
         N& n = ns_host[i];
-        cudaFree(n.msg_label);
-        cudaFree(n.msg_label_swap);
-        cudaFree(n.neighbours);
-
-        n.msg_label = nullptr;
-        n.msg_label_swap = nullptr;
-        n.neighbours = nullptr;
-        n.node_map = nullptr;
+        n.forget_mem();
     }
     delete [] ns_host;
     
-    for(auto i: recycle){
-        cudaFree(i);
-    }
     cudaFree(ns_gpu);
 
     cudaFree(img_data);
@@ -294,6 +293,9 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
     
     delete [] ns;
 
+    cudaFree(label_node_data);
+    cudaFree(neighbours_data);
+    
     return out;
 }
 

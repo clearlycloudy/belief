@@ -13,8 +13,8 @@ struct N {
     int label; //selected label after optimization
     int count_labels = 0; //current node labels
     int count_neighbours = 0;
-    float ** msg_label = nullptr; //holds incoming msg, label -> node_id -> message
-    float ** msg_label_swap = nullptr; //temporary
+    float * msg_label = nullptr; //holds incoming msg; indexing: label * count_neighbours + node_id -> message
+    float * msg_label_swap = nullptr; //temporary
     int * neighbours = nullptr; //neighbour node ids
     N* node_map = nullptr; //node_id -> N* (globally shared)
 
@@ -29,67 +29,50 @@ struct N {
         N* ns = new N[num_nodes];
         return ns;
     }
+
     __host__
-    void CudaCopy(N* node_host, N* node_gpu, N* nodes_gpu_start, std::vector<float*> & recycle){
+    void forget_mem(){
+        msg_label = nullptr;
+        msg_label_swap = nullptr;
+        neighbours = nullptr;
+        node_map = nullptr;
+    }
+    
+    __host__
+    void CudaCopy(N* node_host, N* node_gpu, N* nodes_gpu_start,
+                  float* device_label_node, float* device_label_node_swap,
+                  int* device_neighbours){
+        
         ///copy node data to gpu side, located at node_gpu
         //node_host serves as temporary storage on host side
-        //currently super non-optimal, todo: builk copying and flatten data structure
         
         node_host->id = id;
         node_host->label = label;
         node_host->count_labels = count_labels;
         node_host->count_neighbours = count_neighbours;
+
+        cudaMemcpy(device_label_node,
+                   msg_label,
+                   count_labels*count_neighbours*sizeof(float),
+                   cudaMemcpyHostToDevice);
+        cudaMemcpy(device_label_node_swap,
+                   msg_label_swap,
+                   count_labels*count_neighbours*sizeof(float),
+                   cudaMemcpyHostToDevice);
         
-        float** temp_msg_label = new float*[count_labels]; //host side
-        float** temp_msg_label_swap = new float*[count_labels];
-        for(int i=0; i<count_labels; ++i){
-            float* buf;
-            float* buf_swap;
-            cudaMalloc(&buf, count_neighbours*sizeof(float)); //device side
-            cudaMalloc(&buf_swap, count_neighbours*sizeof(float));
+        node_host->msg_label = device_label_node;
+        node_host->msg_label_swap = device_label_node_swap;
 
-            cudaMemcpy(buf, msg_label[i], count_neighbours*sizeof(float), cudaMemcpyHostToDevice);
-            cudaMemcpy(buf_swap, msg_label_swap[i], count_neighbours*sizeof(float), cudaMemcpyHostToDevice);
-            
-            temp_msg_label[i] = buf; //store device memory location
-            temp_msg_label_swap[i] = buf_swap;
+        cudaMemcpy(device_neighbours,
+                   neighbours,
+                   count_neighbours*sizeof(int),
+                   cudaMemcpyHostToDevice);
 
-            recycle.push_back(buf);
-            recycle.push_back(buf_swap);
-        }
-
-        float** device_msg_label; //device side
-        float** device_msg_label_swap;
-        cudaMalloc(&device_msg_label, count_labels*sizeof(float*));
-        cudaMalloc(&device_msg_label_swap, count_labels*sizeof(float*));
-
-        cudaMemcpy(device_msg_label, temp_msg_label, count_labels*sizeof(float*), cudaMemcpyHostToDevice);
-        cudaMemcpy(device_msg_label_swap, temp_msg_label_swap, count_labels*sizeof(float*), cudaMemcpyHostToDevice);
-        
-        node_host->msg_label = device_msg_label;
-        node_host->msg_label_swap = device_msg_label_swap;
-
-        int* device_neighbours;
-        cudaMalloc(&device_neighbours, count_neighbours*sizeof(int));
-        cudaMemcpy(device_neighbours, neighbours, count_neighbours*sizeof(int), cudaMemcpyHostToDevice);
         node_host->neighbours = device_neighbours;
-        node_host->node_map = nodes_gpu_start;
         
-        cudaMemcpy(node_gpu, node_host, sizeof(N), cudaMemcpyHostToDevice);
+        node_host->node_map = nodes_gpu_start;
+    }
 
-        delete [] temp_msg_label;
-        delete [] temp_msg_label_swap;
-    }
-    __device__
-    void CudaDelete(){
-        for(int i=0; i<count_labels; ++i){
-            cudaFree(msg_label[i]);
-            cudaFree(msg_label_swap[i]);
-        }
-        cudaFree(msg_label);
-        cudaFree(msg_label_swap);
-        cudaFree(neighbours);
-    }
     __host__
     N(int identity) : id(identity) {}
     
@@ -98,19 +81,9 @@ struct N {
     
     __host__
     ~N(){
-        if(msg_label){
-            for(int i=0; i<count_labels; ++i){
-                if(msg_label[i]) delete [] msg_label[i];
-            }
-            delete [] msg_label;
-        }
+        if(msg_label) delete [] msg_label;
 
-        if(msg_label_swap){
-            for(int i=0; i<count_labels; ++i){
-                if(msg_label_swap[i]) delete [] msg_label_swap[i];
-            }
-            delete [] msg_label_swap;
-        }
+        if(msg_label_swap) delete [] msg_label_swap;
 
         if(neighbours) delete [] neighbours;
     }
@@ -134,29 +107,7 @@ struct N {
     __host__ __device__
     void set_labels(int const count){
         assert(count>0);
-
-        if(msg_label){
-            for(int i=0; i<count_labels; ++i){
-                if(msg_label[i]) delete [] msg_label[i];
-            }
-            delete [] msg_label;
-        }
-
-        if(msg_label_swap){
-            for(int i=0; i<count_labels; ++i){
-                if(msg_label_swap[i]) delete [] msg_label_swap[i];
-            }
-            delete [] msg_label_swap;
-        }
-    
-        msg_label = new float* [count];
-        msg_label_swap = new float* [count];
         count_labels = count;
-    
-        for(int i=0; i<count_labels; ++i){
-            msg_label[i] = nullptr;
-            msg_label_swap[i] = nullptr;
-        }
     }
 
     __host__
@@ -179,16 +130,15 @@ struct N {
 
     __host__
     void confirm_neighbours(){
-        for(int i=0;i<count_labels;++i){
-            if(msg_label[i]) delete [] msg_label[i];
-            if(msg_label_swap[i]) delete [] msg_label_swap[i];
-    
-            msg_label[i] = new float [count_neighbours];
-            msg_label_swap[i] = new float [count_neighbours];
+        
+        if(msg_label) delete [] msg_label;
+        if(msg_label_swap) delete [] msg_label_swap;
 
-            std::fill_n(msg_label[i], count_neighbours, 0.);
-            std::fill_n(msg_label_swap[i], count_neighbours, 0.);
-        }
+        msg_label = new float[count_labels * count_neighbours];
+        msg_label_swap = new float[count_labels * count_neighbours];
+
+        std::fill_n(msg_label, count_labels * count_neighbours, 0.);
+        std::fill_n(msg_label_swap, count_labels * count_neighbours, 0.);
     }
 
     template<class Fnode, class Fedge>
@@ -196,18 +146,17 @@ struct N {
     void update_belief(Fnode f_node,
                        Fedge f_edge){
         ///update label
-        // printf("count_labels: %d, count_neighbours: %d\n", count_labels, count_neighbours);
         float belief_best = std::numeric_limits<float>::max();
         for(int l=0; l<count_labels; ++l){
             float accum = 0.;
             for(int j = 0; j < count_neighbours; ++j){
-                accum += msg_label[l][j];
+                int idx = l*count_neighbours + j;
+                accum += msg_label[idx];
             }
             float val = accum + f_node(this, l);
             if(val < belief_best){
                 belief_best = val;
                 label = l;
-                // printf("better val found: %f\n", val);
             }
         }
     }
@@ -226,11 +175,11 @@ struct N {
                     float potential = f_node(this, l_cur) + f_edge(this, l_cur, node_other, l_other);
                     float msg_neighbour = 0.;
                     for(int j = 0; j < node_other->count_neighbours; ++j){
-                        msg_neighbour += node_other->neighbours[j] == id ? 0 : node_other->msg_label[l_other][j];
+                        msg_neighbour += node_other->neighbours[j] == id ? 0 : node_other->msg_label[l_other * node_other->count_neighbours + j];
                     }
                     val_best = min(val_best, potential + msg_neighbour);
                 }
-                msg_label_swap[l_cur][i] = val_best; //incoming msg from other to current node's l_cur
+                msg_label_swap[l_cur * count_neighbours + i] = val_best; //incoming msg from other to current node's l_cur
             }
         }
     }
@@ -259,7 +208,6 @@ __global__ static void cycle(int const iter,
     int chunk_adjust = t < remain ? chunk_nominal+1 : chunk_nominal;
     int start = chunk_adjust * min(t, remain) + chunk_nominal * max(t-remain, 0);
 
-    // printf("start: %d\n", start);    
     for(int i=0; i<iter; ++i){
 
         if(t==0) printf("iter: %d\n", i);
