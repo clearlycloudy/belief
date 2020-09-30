@@ -1,5 +1,5 @@
 # belief propagation
-1;5202;0c1;5202;0c
+1;5202;0c1;5202;0c1;5202;0c
 BP algorithm in C++, along with some examples.
 
 # Implementation
@@ -15,16 +15,16 @@ BP algorithm in C++, along with some examples.
 Using arbitrary settings for tests:
 
 ### Original
-![img3](https://github.com/clearlycloudy/belief/blob/master/tests/img3.png?raw=true =250x)
+<img src="https://github.com/clearlycloudy/belief/blob/master/tests/img3.png?raw=true" width="150"/>
 ### After
-![img3after](https://github.com/clearlycloudy/belief/blob/master/tests/out_img3.png?raw=true =250x)
+<img src="https://github.com/clearlycloudy/belief/blob/master/tests/out_img3.png?raw=true width="150"/>
 
 ### Original
-![img2](https://github.com/clearlycloudy/belief/blob/master/tests/img2.png?raw=true)
+<img src="https://github.com/clearlycloudy/belief/blob/master/tests/img2.png?raw=true" width="150"/>
 ### After
-![img2after](https://github.com/clearlycloudy/belief/blob/master/tests/out_img2.png?raw=true)
+<img src="https://github.com/clearlycloudy/belief/blob/master/tests/out_img2.png?raw=true width="150"/>
 
 ### Original
-![img0](https://github.com/clearlycloudy/belief/blob/master/tests/img0.png?raw=true =250x)
+<img src="https://github.com/clearlycloudy/belief/blob/master/tests/img0.png?raw=true" width="150"/>
 ### After
-![img0after](https://github.com/clearlycloudy/belief/blob/master/tests/out_img0.png?raw=true =250x)
+<img src="https://github.com/clearlycloudy/belief/blob/master/tests/out_img0.png?raw=true width="150"/>
