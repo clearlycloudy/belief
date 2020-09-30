@@ -1,5 +1,5 @@
 # belief propagation
-1;5202;0c1;5202;0c1;5202;0c
+1;5202;0c
 BP algorithm in C++, along with some examples.
 
 # Implementation
@@ -25,9 +25,3 @@ Using arbitrary settings for tests:
     
 ### After
 <img src="https://github.com/clearlycloudy/belief/blob/master/tests/out_img2.png?raw=true" width="150"/>
-
-### Original
-<img src="https://github.com/clearlycloudy/belief/blob/master/tests/img0.png?raw=true" width="250"/>
-    
-### After
-<img src="https://github.com/clearlycloudy/belief/blob/master/tests/out_img0.png?raw=true" width="250"/>
