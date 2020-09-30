@@ -231,10 +231,6 @@ __global__ static void cycle_aux(int iter,
         if(t==0) printf("iter: %d\n", i);
 #endif
         for(int j=start; j<start+chunk_adjust; ++j){
-            nodes[j].update_belief(f_node, f_edge);
-        }
-
-        for(int j=start; j<start+chunk_adjust; ++j){
             nodes[j].distribute_msg(f_node, f_edge);
         }
         
@@ -245,6 +241,10 @@ __global__ static void cycle_aux(int iter,
         }
 
         __syncthreads();
+
+        for(int j=start; j<start+chunk_adjust; ++j){
+            nodes[j].update_belief(f_node, f_edge);
+        }
     }
 }
 

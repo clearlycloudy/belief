@@ -15,16 +15,19 @@ BP algorithm in C++, along with some examples.
 Using arbitrary settings for tests:
 
 ### Original
-<img src="https://github.com/clearlycloudy/belief/blob/master/tests/img3.png?raw=true" width="250"/>
+<img src="https://github.com/clearlycloudy/belief/blob/master/tests/img4.png?raw=true" width="250"/>
+    
 ### After
-<img src="https://github.com/clearlycloudy/belief/blob/master/tests/out_img3.png?raw=true" width="250"/>
+<img src="https://github.com/clearlycloudy/belief/blob/master/tests/out_img4.png?raw=true" width="250"/>
 
 ### Original
 <img src="https://github.com/clearlycloudy/belief/blob/master/tests/img2.png?raw=true" width="150"/>
+    
 ### After
 <img src="https://github.com/clearlycloudy/belief/blob/master/tests/out_img2.png?raw=true" width="150"/>
 
 ### Original
 <img src="https://github.com/clearlycloudy/belief/blob/master/tests/img0.png?raw=true" width="250"/>
+    
 ### After
 <img src="https://github.com/clearlycloudy/belief/blob/master/tests/out_img0.png?raw=true" width="250"/>
