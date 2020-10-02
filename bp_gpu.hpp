@@ -242,8 +242,10 @@ __global__ static void cycle_aux(int iter,
 
         __syncthreads();
 
-        for(int j=start; j<start+chunk_adjust; ++j){
-            nodes[j].update_belief(f_node, f_edge);
+        if(i+1==iter){
+            for(int j=start; j<start+chunk_adjust; ++j){
+                nodes[j].update_belief(f_node, f_edge);
+            }
         }
     }
 }
