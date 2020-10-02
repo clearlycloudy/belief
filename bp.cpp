@@ -129,7 +129,7 @@ void N::cycle(int const iter,
                           }
                           for(int j= start; j < start+chunk; ++j){
                               auto i = ns[j];
-                              i->update_belief(f_node, f_edge);
+                              i->distribute_msg(f_node, f_edge);
                           }
                           {
                               unique_lock<mutex> lock(mut);
@@ -144,7 +144,7 @@ void N::cycle(int const iter,
                           }
                           for(int j= start; j < start+chunk; ++j){
                               auto i = ns[j];
-                              i->distribute_msg(f_node, f_edge);
+                              i->accum_msg();
                           }
                           {
                               unique_lock<mutex> lock(mut);
@@ -159,7 +159,7 @@ void N::cycle(int const iter,
                           }
                           for(int j= start; j < start+chunk; ++j){
                               auto i = ns[j];
-                              i->accum_msg();
+                              i->update_msg();
                           }
                           {
                               unique_lock<mutex> lock(mut);
@@ -172,9 +172,11 @@ void N::cycle(int const iter,
                               unique_lock<mutex> lock(mut);
                               cond_var.wait( lock, [&](){return stage == 3;} );
                           }
-                          for(int j= start; j < start+chunk; ++j){
-                              auto i = ns[j];
-                              i->update_msg();
+                          if(_+1==iter){
+                              for(int j= start; j < start+chunk; ++j){
+                                  auto i = ns[j];
+                                  i->update_belief(f_node, f_edge);
+                              }
                           }
                           {
                               unique_lock<mutex> lock(mut);
