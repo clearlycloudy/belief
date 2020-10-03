@@ -1,10 +1,8 @@
-# belief propagation
-
-BP algorithm in C++, along with some examples.
+# belief propagation and other learning algorithm in C++, along with some examples.
 
 # Implementation
-    - bp.cpp & bp.hpp (CPU version)
-    - bp_gpu.hpp (GPU version)
+    - bp.cpp & bp.hpp (BP, CPU version)
+    - bp_gpu.hpp (BP, GPU version)
      
 # Examples
 
