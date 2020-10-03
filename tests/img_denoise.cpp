@@ -17,6 +17,8 @@ constexpr int KERNEL_SIZE = 2;
 constexpr int ITERATIONS = 4;
 constexpr float FRAC_NEIGH = 0.8;
 constexpr float FRAC_LABEL = 0.8;
+constexpr float WEIGHT_POTENTIAL_NODE = 0.3;
+constexpr float WEIGHT_POTENTIAL_EDGE = 1.0;
 
 default_random_engine gen;
 
@@ -68,8 +70,11 @@ vector<N*> init_tree(vector<unsigned char> const & img,
                         uniform_real_distribution<float> distr(0.,1.);
                         if(ii>=0 && ii<h &&
                            jj>=0 && jj<w &&
-                           distr(gen) < FRAC_LABEL){
+                           ((distr(gen) < FRAC_LABEL) || (ii==i && jj==j))){ //always insert original label
                             label_map[n][id_label] = {ii,jj};
+                            if(ii==i && jj==j){
+                                n->set_label_orig(id_label);
+                            }
                             id_label++;
                         }
                     }
@@ -136,8 +141,10 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
     
     auto potential_node = [&](N* const n,
                               int const l) -> float {
-                              return 1.;
-                          };
+        auto [y0, x0] = label_map[n][l];
+        auto [y1, x1] = label_map[n][n->get_label_orig()];
+        return WEIGHT_POTENTIAL_NODE * colour_diff(&img[y0*w*4+x0*4], &img[y1*w*4+x1*4]);
+    };
 
     auto potential_edge = [&](N* const n0,
                               int const l0,

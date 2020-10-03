@@ -25,6 +25,14 @@ int N::get_label() const {
     return label;
 }
 
+int N::get_label_orig() const {
+    return label_orig;
+}
+
+void N::set_label_orig(int l){
+    label_orig = l;
+}
+
 void N::set_labels(int count){
     assert(count>0);
     msg_label.resize(count);

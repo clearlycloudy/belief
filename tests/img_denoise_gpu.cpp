@@ -21,6 +21,8 @@ constexpr int ITERATIONS = 10;
 constexpr float FRAC_NEIGH = 0.5;
 constexpr float FRAC_LABEL = 0.5;
 constexpr int NUM_THREADS = 512;
+constexpr float WEIGHT_POTENTIAL_NODE = 0.3;
+constexpr float WEIGHT_POTENTIAL_EDGE = 1.0;
 
 default_random_engine gen;
 
@@ -78,6 +80,7 @@ pair<N*, int> init_tree(vector<unsigned char> const & img,
                 int id_label = 0;
                 if(n->get_id()<label_map.size())
                     label_map[n->get_id()].clear();
+                
                 for(int k=-KERNEL_SIZE_LABEL;k<=KERNEL_SIZE_LABEL;++k){
                     for(int l=-KERNEL_SIZE_LABEL;l<=KERNEL_SIZE_LABEL;++l){
                         int ii = i+k;
@@ -85,13 +88,16 @@ pair<N*, int> init_tree(vector<unsigned char> const & img,
                         uniform_real_distribution<float> distr(0.,1.);
                         if(ii>=0 && ii<h &&
                            jj>=0 && jj<w &&
-                           distr(gen) < FRAC_LABEL){
+                           (distr(gen) < FRAC_LABEL) || (ii==i && jj==j)){ //always insert original label
                             if(n->get_id() >= label_map.size())
                                 label_map.resize(n->get_id()+1);
                             if(label_map[n->get_id()].size() <= id_label){
                                 label_map[n->get_id()].resize(id_label+1);
                             }
                             label_map[n->get_id()][id_label] = {ii,jj};
+                            if(ii==i && jj==j){
+                                n->label_orig = id_label;
+                            }
                             id_label++;
                         }
                     }
@@ -116,7 +122,7 @@ pair<N*, int> init_tree(vector<unsigned char> const & img,
                         uniform_real_distribution<float> distr(0.,1.);
                         if(ii>=0 && ii<h &&
                            jj>=0 && jj<w &&
-                           (ii!=i || jj!=j)&&
+                           (ii!=i || jj!=j) &&
                            distr(gen) < FRAC_NEIGH){
                             int index2 = ii*w+jj;
                             neigh_map[n].insert(ret[index2]);
@@ -175,7 +181,7 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
     }
     
     pair<int,int> * label_map_array = new pair<int,int>[node_count * max_count_labels];
-
+    
     assert(node_count == label_map.size());
         
     for(int i=0; i<node_count; ++i){
@@ -200,9 +206,11 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
                &img[0],
                img.size() * sizeof(unsigned char), cudaMemcpyHostToDevice);
         
-    auto potential_node = [] __device__ (N* const n,
-                                         int const l) -> float {
-        return 1.;
+    auto potential_node = [=] __device__ (N* const n,
+                                          int const l) -> float {
+        auto [y0, x0] = device_label_map_array[n->get_id() * max_count_labels + l];
+        auto [y1, x1] = device_label_map_array[n->get_id() * max_count_labels + n->label_orig];
+        return WEIGHT_POTENTIAL_NODE * colour_diff(&img_data[y0*w*4+x0*4], &img_data[y1*w*4+x1*4]);
     };
 
     auto potential_edge = [=] __device__ (N* const n0,
@@ -211,7 +219,7 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
                                           int const l1) -> float {
         auto [y0, x0] = device_label_map_array[n0->get_id() * max_count_labels + l0];
         auto [y1, x1] = device_label_map_array[n1->get_id() * max_count_labels + l1];
-        return colour_diff(&img_data[y0*w*4+x0*4], &img_data[y1*w*4+x1*4]);
+        return WEIGHT_POTENTIAL_EDGE * colour_diff(&img_data[y0*w*4+x0*4], &img_data[y1*w*4+x1*4]);
     };
 
     float* label_node_data;

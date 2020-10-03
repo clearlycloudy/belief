@@ -13,6 +13,7 @@ struct N {
     
     int id; //current node id
     int label; //selected label after optimization
+    int label_orig;
     int count_labels = 0; //current node labels
     int count_neighbours = 0;
     float * msg_label = nullptr; //holds incoming msg; indexing: label * count_neighbours_max (provided by Fmsg_index lambda) + node_id -> message
@@ -52,6 +53,7 @@ struct N {
         
         node_host->id = id;
         node_host->label = label;
+        node_host->label_orig = label_orig;
         node_host->count_labels = count_labels;
         node_host->count_neighbours = count_neighbours;
 

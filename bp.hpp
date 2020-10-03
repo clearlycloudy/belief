@@ -10,6 +10,7 @@ class N {
 private:
     
     int label; //selected label after optimization
+    int label_orig;
     int count_labels; //current node labels
     std::vector<std::unordered_map<N*,float>> msg_label; //holds incoming messages, label -> neighbour -> message
     std::vector<std::unordered_map<N*,float>> msg_label_swap;
@@ -18,7 +19,11 @@ private:
 public:
 
     int get_label() const;
-    
+
+    int get_label_orig() const;
+
+    void set_label_orig(int l);
+
     void set_labels(int const count_labels);
 
     void set_neighbour(N* const n);
