@@ -283,15 +283,11 @@ vector<unsigned char> bp_run(vector<unsigned char> const & img,
     cudaFree(device_label_map_array);
     delete [] label_map_array;
         
-    //free gpu memory
-    
-    for(int i=0; i<node_count; ++i){
-        N& n = ns_host[i];
-        n.forget_mem();
-    }
-    delete [] ns_host;
-    
-    cudaFree(ns_gpu);
+    //free memory
+
+    N::FreeBulkAllocNodes(ns_host, node_count);
+
+    N::FreeCudaAllocNodes(ns_gpu);
 
     cudaFree(img_data);
     

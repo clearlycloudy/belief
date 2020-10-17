@@ -34,6 +34,20 @@ struct N {
     }
 
     __host__
+    static void FreeBulkAllocNodes(N* ns, int count){
+        for(int i=0; i<count; ++i){
+            N& n = ns[i];
+            n.forget_mem();
+        }
+        delete [] ns;
+    }
+
+    __host__
+    static void FreeCudaAllocNodes(N* ns){
+        cudaFree(ns);
+    }
+
+    __host__
     void forget_mem(){
         msg_label = nullptr;
         msg_label_swap = nullptr;
