@@ -1,9 +1,13 @@
 # belief propagation and other learning algorithm in C++, along with some examples.
 
-# Implementation
+# Implementation (more to come)
     - bp.cpp & bp.hpp (BP, CPU version)
     - bp_gpu.hpp (BP, GPU version)
-     
+
+# Todo
+	- Gibbs sampler
+	- Hamiltonian Monte Carlo
+
 # Examples
 
 ## Image Filtering
